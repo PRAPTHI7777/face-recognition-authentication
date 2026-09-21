@@ -1,233 +1,223 @@
 # Face Recognition Identification System
 
-## Overview
+An image-based face recognition system that enrolls individuals and identifies new faces by comparing them against an enrolled database.
 
-This project is a simple face recognition identification system built for an
-AI/ML internship assignment. It enrolls known individuals, extracts face
-embeddings from images, and identifies new faces by comparing them with the
-enrolled embedding database.
+## Requirements Implemented
 
-The implementation is intentionally small and explainable. It is not intended
-to claim 100% accuracy in real-world conditions.
+| Requirement | Implementation |
+|---|---|
+| Face Detection | InsightFace |
+| Face Embeddings | 512-dimensional embeddings |
+| Similarity Matching | Cosine similarity |
+| Identity Matching | Highest similarity score |
+| Unknown Rejection | Threshold-based (`0.50`) |
+| Enrollment | Embedding stored as JSON |
+| Evaluation | Genuine vs. impostor pairs |
+| Failure Handling | No face, multiple faces, unknown identity |
 
 ## How It Works
 
-1. **Face detection** - InsightFace detects faces in an input image.
-2. **Face embedding extraction** - The detected face is converted into a
-   numerical feature vector.
-3. **Normalization** - The embedding is L2-normalized before comparison.
-4. **Cosine similarity matching** - The normalized input embedding is compared
-   with every enrolled embedding.
-5. **Unknown-face rejection** - The highest similarity is compared with a
-   configurable threshold. If it is below the threshold, the result is
-   returned as `Unknown`.
+<img width="1224" height="1285" alt="Face recognition workflow" src="https://github.com/user-attachments/assets/3c8b3140-388a-4d97-a856-f1095b52f790" />
 
-Enrollment and recognition currently require exactly one face in the image.
+### Enrollment
 
-## Model
+```text
+Image → Face Detection → 512-D Embedding → Normalize → Store Name + Embedding
+```
+
+The system requires exactly one face in the enrollment image. The resulting embedding is stored in `data/enrolled/`.
+
+### Recognition
+
+```text
+Image → Face Detection → 512-D Embedding
+      → Compare with Enrolled Embeddings
+      → Highest Similarity
+      → Threshold 0.50
+      → Matched Identity / Unknown
+```
+
+## Model Used
 
 - **Model:** InsightFace `buffalo_l`
-- **Embedding size:** 512 dimensions
+- **Embedding:** 512-dimensional
 - **Runtime:** ONNX Runtime
-- **Image processing:** OpenCV
-- **Numerical processing:** NumPy
+- **Execution:** CPU
+- **Libraries:** Python, InsightFace, OpenCV, NumPy
 
-## Enrollment Workflow
+A pretrained model is used instead of training from scratch, allowing the project to focus on the complete identification and matching pipeline.
 
-Enrollment accepts an image and a person name:
+## Matching & Unknown Rejection
 
-1. Load the image.
-2. Detect faces.
-3. Require exactly one face.
-4. Extract and normalize the 512-dimensional embedding.
-5. Save the name and embedding as a JSON file under `data/enrolled/`.
+Face embeddings are compared using **cosine similarity**.
 
-Example:
+The configured threshold is:
 
-```python
-from app.enrollment import enroll
-
-enroll(
-    "data/test/prapthi1.jpg",
-    "Prapthi",
-    ctx_id=-1,  # CPU; use 0 for GPU when configured
-)
+```text
+0.50
 ```
 
-An existing enrollment is not overwritten unless `overwrite=True` is passed.
+Decision rule:
 
-## Recognition Workflow
-
-Recognition accepts an image path and a threshold:
-
-1. Detect faces and require exactly one face.
-2. Extract and normalize the input embedding.
-3. Load all JSON enrollments from `data/enrolled/`.
-4. Calculate cosine similarity against each enrolled embedding.
-5. Select the highest similarity.
-6. Return the matching identity when the threshold is met; otherwise return
-   `Unknown`.
-
-Example:
-
-```python
-from app.recognition import recognize
-
-result = recognize(
-    "data/test/prapthi2.jpg",
-    threshold=0.50,
-    ctx_id=-1,  # CPU; use 0 for GPU when configured
-)
-
-print(result)
+```text
+similarity >= 0.50  →  Matched
+similarity <  0.50  →  Unknown
 ```
 
-## Matching Threshold
-
-The current matching threshold is **0.50**:
-
-```python
-result = recognize("data/test/prapthi2.jpg", threshold=0.50, ctx_id=-1)
-```
-
-This value was selected based on the current small validation evaluation. It
-is an initial working threshold, not a universally optimal value. A larger,
-more representative validation dataset should be used before deploying this
-system in a real application.
+The threshold prevents low-similarity faces from being incorrectly assigned to an enrolled identity.
 
 ## Basic Evaluation
 
-The evaluation script is [evaluation_test.py](evaluation_test.py). It compares:
+The evaluation uses:
 
-- **Genuine:** `prapthi1.jpg` against `prapthi2.jpg`
-- **Impostor:** `prapthi1.jpg` against `unknown.jpg`
+- **Genuine pair:** `elon1.jpg` vs `elon2.jpg`
+- **Impostor pair:** `elon1.jpg` vs `zuck.jpg`
 
-The following thresholds were tested:
+A genuine pair contains images of the same person, while an impostor pair contains images of different people.
 
-```text
-0.30, 0.35, 0.40, 0.45, 0.50,
-0.55, 0.60, 0.65, 0.70
-```
+| Threshold | Genuine Accept | Impostor Accept | Accuracy |
+|---:|---:|---:|---:|
+| 0.30 | 100% | 0% | 100% |
+| 0.35 | 100% | 0% | 100% |
+| 0.40 | 100% | 0% | 100% |
+| 0.45 | 100% | 0% | 100% |
+| **0.50** | **100%** | **0%** | **100%** |
+| 0.55 | 100% | 0% | 100% |
+| 0.60 | 100% | 0% | 100% |
+| 0.65 | 100% | 0% | 100% |
+| 0.70 | 0% | 0% | 50% |
 
-Observed results for this evaluation:
+At the selected threshold of **0.50**, the genuine pair was accepted and the impostor pair was rejected.
 
-| Threshold | Genuine accept % | Impostor accept % | Accuracy % |
-|---|---:|---:|---:|
-| 0.30 | 100.00 | 0.00 | 100.00 |
-| 0.35 | 100.00 | 0.00 | 100.00 |
-| 0.40 | 100.00 | 0.00 | 100.00 |
-| 0.45 | 100.00 | 0.00 | 100.00 |
-| 0.50 | 100.00 | 0.00 | 100.00 |
-| 0.55 | 100.00 | 0.00 | 100.00 |
-| 0.60 | 100.00 | 0.00 | 100.00 |
-| 0.65 | 100.00 | 0.00 | 100.00 |
-| 0.70 | 0.00 | 0.00 | 50.00 |
+At `0.70`, the genuine pair was rejected, demonstrating a false rejection caused by a threshold that was too high.
 
-This is only a **basic sanity check** because the evaluation contains one
-genuine pair and one impostor pair. It is too small to estimate real-world
-accuracy, error rates, or generalization performance.
-
-Run it from the project root:
-
-```powershell
-python evaluation_test.py
-```
+> **Evaluation note:** This is a small sanity-check evaluation containing one genuine pair and one impostor pair. The results should not be interpreted as real-world accuracy. A larger and more diverse dataset would be required for proper evaluation and threshold calibration.
 
 ## Failure Cases
 
-The system may fail to produce a reliable result when:
+The system handles the following cases:
 
-- No face is present.
-- Multiple faces are present; the current workflow requires exactly one.
-- Lighting is poor.
-- The face is at an extreme pose or viewing angle.
-- The image is blurred.
-- Important facial regions are occluded.
-- The input image is low quality or too small.
-- The person is not enrolled, in which case the result should be `Unknown`.
+- **No face detected** → returns `no_face`
+- **Multiple faces detected** → recognition is rejected because exactly one face is required
+- **Unknown person** → returns `Unknown` when similarity is below the threshold
+- **Poor lighting, blur, extreme pose, or occlusion** → may reduce recognition reliability
+- **Person not enrolled** → cannot be identified and may be returned as `Unknown`
 
-## Limitations and Possible Improvements
+## Example Results
 
-- Evaluate on a larger and more diverse dataset.
-- Calibrate the threshold using a statistically meaningful validation set.
-- Support multiple enrollment images per person and aggregate their embeddings.
-- Replace the JSON files with a persistent database for larger deployments.
-- Add liveness detection to help reduce presentation or spoofing attacks.
-- Improve handling of multiple faces, including per-face identification.
+### Known Person
 
-## Installation and Usage on Windows
+```text
+status: matched
+identity: Elon
+similarity: 1.0
+```
 
-Open PowerShell in the project directory and create a virtual environment:
+### Unknown Person
+
+```text
+status: unknown
+similarity: 0.21
+```
+
+### No Face
+
+```text
+status: no_face
+message: No face detected in the image
+```
+
+## Project Structure
+
+```text
+face-recognition-system/
+│
+├── app/
+│   ├── embedder.py       # Face detection and embeddings
+│   ├── enrollment.py     # Enroll and store identities
+│   ├── matcher.py        # Cosine similarity
+│   ├── recognition.py    # Identify / reject faces
+│   └── evaluation.py     # Threshold evaluation
+│
+├── data/
+│   ├── enrolled/         # Stored face embeddings
+│   └── test/             # Test images
+│
+├── enroll_test.py
+├── recognize_test.py
+├── evaluation_test.py
+├── test_face.py
+├── test_similarity.py
+├── requirements.txt
+└── README.md
+```
+
+## How to Run
+
+### 1. Clone the repository
+
+```powershell
+git clone https://github.com/PRAPTHI7777/face-recognition-authentication.git
+cd face-recognition-authentication
+```
+
+### 2. Create a virtual environment
 
 ```powershell
 py -3.11 -m venv venv
 .\venv\Scripts\Activate.ps1
 ```
 
-Install the required packages:
+### 3. Install dependencies
 
 ```powershell
-python -m pip install --upgrade pip
-python -m pip install insightface onnxruntime opencv-python numpy
+python -m pip install -r requirements.txt
 ```
 
-The first InsightFace run may download the `buffalo_l` model files. Ensure
-that the machine has internet access for this initial setup.
+The first run may download the InsightFace `buffalo_l` model.
 
-Run the existing example scripts:
+### 4. Enroll a person
 
 ```powershell
 python enroll_test.py
+```
+
+The generated embedding is stored in:
+
+```text
+data/enrolled/
+```
+
+### 5. Recognize a face
+
+```powershell
 python recognize_test.py
+```
+
+The system compares the input face against the enrolled database and returns either the matched identity or `Unknown`.
+
+### 6. Run evaluation
+
+```powershell
 python evaluation_test.py
 ```
 
-The scripts use `ctx_id=-1` for CPU execution. Use `ctx_id=0` only when a
-compatible GPU runtime and configuration are available.
+This evaluates the system across multiple similarity thresholds using genuine and impostor pairs.
 
-## Project Structure
 
-```text
-face-recognition-system/
-├── app/
-│   ├── embedder.py       # Reusable InsightFace model and embedding extraction
-│   ├── enrollment.py     # Enrollment and JSON database loading
-│   ├── evaluation.py     # Pair-based threshold evaluation
-│   ├── matcher.py        # Cosine similarity helper
-│   └── recognition.py    # Threshold-based identity recognition
-├── data/
-│   ├── enrolled/         # JSON enrollment records
-│   └── test/             # Evaluation and recognition images
-├── enroll_test.py        # Enrollment example
-├── evaluation_test.py    # Evaluation example
-├── recognize_test.py     # Recognition example
-├── test_face.py          # Face detection test
-├── test_similarity.py    # Similarity test
-└── README.md
-```
+## Possible Improvements
 
-## Example Recognition Output
+- Evaluate using a larger and more diverse dataset
+- Calibrate the threshold using more genuine and impostor pairs
+- Support multiple enrollment images per person
+- Replace JSON storage with a database
+- Add liveness detection
+- Support multiple faces in one image
+- Add a web/API interface
+- Add FAR/FRR and additional evaluation metrics
 
-For a successful match, the result has this form:
+## Limitations
 
-```python
-{
-    "status": "matched",
-    "message": "Matched Prapthi",
-    "name": "Prapthi",
-    "similarity": 0.78
-}
-```
+This is an **image-based face identification prototype**, not a production biometric security system.
 
-For a face below the configured threshold:
-
-```python
-{
-    "status": "unknown",
-    "message": "No enrolled identity passed the threshold",
-    "similarity": 0.43
-}
-```
-
-The similarity values above are representative output formats. They are not
-claimed evaluation results for all images or environments.
+The evaluation dataset is small and the current implementation uses JSON-based storage. Production use would require larger-scale evaluation, threshold calibration, secure biometric storage, and additional anti-spoofing measures.
